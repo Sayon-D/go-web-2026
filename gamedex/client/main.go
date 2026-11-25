@@ -1,80 +1,110 @@
 package main
 
 import (
-	"encoding/json"
+	"bytes"
+	"errors"
+	"flag"
 	"fmt"
+	"html/template"
+	"log"
 	"net/http"
-	"os"
-	"time"
+	"strconv"
+	"strings"
 )
 
-const baseURL = "http://localhost:8081/api"
+var tmpl = template.Must(template.ParseGlob("templates/*.html"))
 
-// Étape 1 : structs
-type Game struct {
-	ID     int      `json:"id"`
-	Name   string   `json:"name"`
-	Year   int      `json:"year"`
-	Studio string   `json:"studio"`
-	Genres []string `json:"genres"`
+// PageData : toutes les données dont les templates ont besoin.
+type PageData struct {
+	Title       string
+	Q           string
+	Games       []Game
+	Game        Game
+	Tournaments []Tournament
+	Status      int
+	Message     string
 }
 
-type Tournament struct {
-	ID     int     `json:"id"`
-	GameID int     `json:"gameId"`
-	Name   string  `json:"name"`
-	City   string  `json:"city"`
-	Date   string  `json:"date"`
-	Lat    float64 `json:"lat"`
-	Lng    float64 `json:"lng"`
+// render exécute le template dans un tampon : si le template échoue,
+// on n'a rien envoyé à moitié et on peut répondre proprement.
+func render(w http.ResponseWriter, status int, name string, data PageData) {
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, name, data); err != nil {
+		log.Println("template :", err)
+		http.Error(w, "erreur interne", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	buf.WriteTo(w)
 }
 
-// Étape 2 : client avec timeout de 3 secondes
-var client = &http.Client{Timeout: 3 * time.Second}
+func renderError(w http.ResponseWriter, status int, msg string) {
+	render(w, status, "erreur.html", PageData{Title: "Erreur", Status: status, Message: msg})
+}
 
-func fetchJSON(url string, dst any) error {
-	resp, err := client.Get(url)
+func accueil(w http.ResponseWriter, r *http.Request) {
+	render(w, http.StatusOK, "accueil.html", PageData{Title: "Accueil"})
+}
+
+func notFound(w http.ResponseWriter, r *http.Request) {
+	renderError(w, http.StatusNotFound, "Cette page n'existe pas.")
+}
+
+// Étapes 2 et 5
+func listeJeux(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	games, err := FetchGames(q)
 	if err != nil {
-		return fmt.Errorf("appel impossible vers %s : %w", url, err)
+		log.Println(err)
+		renderError(w, http.StatusServiceUnavailable, "L'API des jeux est indisponible, réessayez plus tard.")
+		return
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("l'API a répondu %d (%s) pour %s",
-			resp.StatusCode, http.StatusText(resp.StatusCode), url)
-	}
-	if err := json.NewDecoder(resp.Body).Decode(dst); err != nil {
-		return fmt.Errorf("JSON illisible reçu de %s : %w", url, err)
-	}
-	return nil
+	render(w, http.StatusOK, "jeux.html", PageData{Title: "Les jeux", Q: q, Games: games})
 }
 
-func FetchGames() ([]Game, error) {
-	var games []Game
-	err := fetchJSON(baseURL+"/games", &games)
-	return games, err
-}
+// Étapes 3 et 4
+func ficheJeu(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		renderError(w, http.StatusBadRequest, "L'identifiant du jeu doit être un nombre.")
+		return
+	}
 
-func FetchTournaments(gameID int) ([]Tournament, error) {
-	var ts []Tournament
-	err := fetchJSON(fmt.Sprintf("%s/games/%d/tournaments", baseURL, gameID), &ts)
-	return ts, err
+	game, err := FetchGame(id)
+	if err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
+			renderError(w, http.StatusNotFound, "Ce jeu n'existe pas.")
+			return
+		}
+		log.Println(err)
+		renderError(w, http.StatusServiceUnavailable, "L'API des jeux est indisponible, réessayez plus tard.")
+		return
+	}
+
+	tournaments, err := FetchTournaments(id)
+	if err != nil {
+		log.Println(err)
+		renderError(w, http.StatusServiceUnavailable, "L'API des jeux est indisponible, réessayez plus tard.")
+		return
+	}
+
+	render(w, http.StatusOK, "jeu.html", PageData{Title: game.Name, Game: game, Tournaments: tournaments})
 }
 
 func main() {
-	games, err := FetchGames()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Erreur :", err)
-		os.Exit(1)
-	}
+	port := flag.Int("port", 8080, "port d'écoute du serveur")
+	flag.Parse()
 
-	// Étape 3 : chaque jeu avec son année et son nombre de tournois
-	for _, g := range games {
-		ts, err := FetchTournaments(g.ID)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Erreur :", err)
-			os.Exit(1)
-		}
-		fmt.Printf("%s (%d) : %d tournoi(s)\n", g.Name, g.Year, len(ts))
-	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", accueil)
+	mux.HandleFunc("GET /jeux", listeJeux)
+	mux.HandleFunc("GET /jeux/{id}", ficheJeu)
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	mux.HandleFunc("/", notFound) // toute autre URL : page d'erreur 404
+
+	addr := fmt.Sprintf(":%d", *port)
+	log.Printf("Serveur démarré sur http://localhost%s", addr)
+	log.Fatal(http.ListenAndServe(addr, mux))
 }
