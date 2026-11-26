@@ -1,0 +1,18 @@
+{{template "header.html" .}}
+<h1>Les jeux</h1>
+
+<form action="/jeux" method="get">
+  <input type="search" name="q" value="{{.Q}}" placeholder="Rechercher un jeu">
+  <button type="submit">Chercher</button>
+</form>
+
+{{if .Q}}<p>Vous avez cherché : {{.Q}}</p>{{end}}
+
+<ul>
+  {{range .Games}}
+  <li><a href="/jeux/{{.ID}}">{{.Name}}</a> ({{.Year}})</li>
+  {{else}}
+  <li>Aucun jeu trouvé.</li>
+  {{end}}
+</ul>
+{{template "footer.html" .}}
