@@ -3,6 +3,12 @@
 
 <form action="/jeux" method="get">
   <input type="search" name="q" value="{{.Q}}" placeholder="Rechercher un jeu">
+  <select name="genre">
+    <option value="">Tous les genres</option>
+    {{range .Genres}}
+    <option value="{{.}}" {{if eq . $.Genre}}selected{{end}}>{{.}}</option>
+    {{end}}
+  </select>
   <button type="submit">Chercher</button>
 </form>
 

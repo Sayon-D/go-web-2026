@@ -19,7 +19,7 @@ func main() {
 
 	// Chargement unique au démarrage
 	client := api.New(*apiURL)
-	games, err := client.Games()
+	games, err := client.Games("", "")
 	if err != nil {
 		log.Fatalf("chargement des jeux impossible : %v", err)
 	}
@@ -30,7 +30,7 @@ func main() {
 	log.Printf("%d jeux et %d tournois chargés", len(games), len(tournaments))
 
 	cat := catalog.New(games, tournaments)
-	srv, err := server.New(cat, *webDir)
+	srv, err := server.New(cat, client, *webDir)
 	if err != nil {
 		log.Fatal(err)
 	}

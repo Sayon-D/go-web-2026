@@ -1,18 +1,31 @@
 {{template "header.html" .}}
-<h1>Les jeux</h1>
+<h1>{{.Game.Name}}</h1>
+<p>{{.Game.Studio}} · {{.Game.Year}}</p>
+<p>Genres : {{range $i, $g := .Game.Genres}}{{if $i}}, {{end}}{{$g}}{{end}}</p>
 
-<form action="/jeux" method="get">
-  <input type="search" name="q" value="{{.Q}}" placeholder="Rechercher un jeu">
-  <button type="submit">Chercher</button>
+<form method="post" action="/jeux/{{.Game.ID}}/like">
+  <button>♥ J'aime ({{.Likes}})</button>
 </form>
 
-{{if .Q}}<p>Vous avez cherché : {{.Q}}</p>{{end}}
-
+<h2>Tournois</h2>
+{{if .Tournaments}}
 <ul>
-  {{range .Games}}
-  <li><a href="/jeux/{{.ID}}">{{.Name}}</a> ({{.Year}})</li>
-  {{else}}
-  <li>Aucun jeu trouvé.</li>
+  {{range .Tournaments}}
+  <li>
+    {{.Name}} · {{.City}} · {{.Date}}
+    {{with index $.Inscrits .ID}}
+      <br>Inscrits : {{range $i, $p := .}}{{if $i}}, {{end}}{{$p}}{{end}}
+    {{end}}
+    <form method="post" action="/jeux/{{$.Game.ID}}/tournois/{{.ID}}/inscription">
+      <input name="pseudo" placeholder="Votre pseudo" maxlength="30" required>
+      <button>S'inscrire</button>
+    </form>
+  </li>
   {{end}}
 </ul>
+{{else}}
+<p>Aucun tournoi prévu pour ce jeu.</p>
+{{end}}
+
+<p><a href="/jeux">← Retour à la liste</a></p>
 {{template "footer.html" .}}

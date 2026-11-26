@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"gamedex/internal/catalog"
@@ -22,22 +23,34 @@ func New(baseURL string) *Client {
 }
 
 func (c *Client) get(path string, dst any) error {
-	url := c.baseURL + path
-	resp, err := c.http.Get(url)
+	u := c.baseURL + path
+	resp, err := c.http.Get(u)
 	if err != nil {
-		return fmt.Errorf("API injoignable (%s) : %w", url, err)
+		return fmt.Errorf("API injoignable (%s) : %w", u, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("l'API a répondu %d pour %s", resp.StatusCode, url)
+		return fmt.Errorf("l'API a répondu %d pour %s", resp.StatusCode, u)
 	}
 	return json.NewDecoder(resp.Body).Decode(dst)
 }
 
-func (c *Client) Games() ([]catalog.Game, error) {
+// Games interroge /games avec les filtres optionnels q et genre.
+func (c *Client) Games(q, genre string) ([]catalog.Game, error) {
+	params := url.Values{}
+	if q != "" {
+		params.Set("q", q)
+	}
+	if genre != "" {
+		params.Set("genre", genre)
+	}
+	path := "/games"
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
 	var games []catalog.Game
-	err := c.get("/games", &games)
+	err := c.get(path, &games)
 	return games, err
 }
 

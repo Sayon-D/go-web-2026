@@ -67,3 +67,13 @@ func (c *Catalog) TournamentsOf(gameID int) []Tournament {
 	}
 	return result
 }
+
+// Genres renvoie la liste triée des genres, sans doublon.
+func (c *Catalog) Genres() []string {
+	var out []string
+	for _, g := range c.games {
+		out = append(out, g.Genres...)
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
